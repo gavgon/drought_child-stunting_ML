@@ -1,0 +1,60 @@
+---
+title: "PPOL 6803 Final Project Group Proposal"
+subtitle: "Floods & Child Stunting"
+author: "Abhinav Dutt, Gavin Gondalwala, & Zheng Gu"
+format: pdf
+editor: source
+editor_options: 
+  chunk_output_type: console
+execute: 
+  warning: false
+urlcolor: blue
+---
+
+# Introduction
+
+This project builds on Gavin Gondalwala's proposal of analyzing the relationship between drought exposure and childhood stunting. The corresponding Github repo can be found at <https://github.com/gavgon/PPOL-6803_Final-Project>.
+
+# Research Question & Motivation
+
+## Research Question
+
+*Can we predict child stunting in Sub-Saharan Africa?*
+
+## Motivation
+
+Climate change is disrupting weather patterns globally and increasing water scarcity. Simultaneously, global food aid is dwindling. Especially in countries/regions where subsistence farming is prevalent, we ask if we can predict childhood stunting in Sub-Saharan Africa (SSA) based on variables such as land under cultivation, long term drought exposure, and mother's height. 
+
+# Data & Approach
+
+## Data
+The following data sources will be used in the analysis:
+
+* **DHS Surveys**: Sourced from [The Demographic and Health Surveys Program](https://dhsprogram.com/), microdata collected through household surveys has already been obtained which includes conventional demographic variables, in addition to menstrual data, food sources, education levels, food consumption, health data, and, notably, mother's height. An additional application will be filed which, if granted, will allow the team to obtain GPS data for each household. Data is reported at the household level in separate national datasets which will be merged. While each national dataset is large, there are missing values for notable variables. For instance, Angola has roughly 32,000 missing observations for the child stunting variable, and Rwanda has roughly 22,000. Since the intention is aggregation across all of SSA, however, we believe there will still be an adequately powered sample. The data is downloadable as a .dta file, and there is also an R package called `rdhs` for manipulation.
+
+* **SPEIbase**: This is geographic data sourced from [the Global SPEI database](https://spei.csic.es/database.html). The data covers land exposure to drought globally with 0.5 degrees of spatial resolution tracked monthly and is standardized. It contains variables for Standard Precipitation-Evapotranspiration Index, latitude, longitude, and time, and there is a clear data dictionary. It can be accessed with the R package `netcdf`.
+
+* **MapSPAM (IFPRI)**: [SPAM](https://www.mapspam.info/methodology/) uses inputs such as satellite crop coverage, land statistics, production & irrigation systems, crop intensity, crop suitability, rural population density, and crop prices to produce a dataset detailing hectares, farmed area, production, and yield. It has global coverage due to the satellite observations and is available as .csv files. It is at a granular grid cell level which is disaggregated from the broader units of countries and sub-national provinces.
+
+## Approach
+The project aims to conduct a predictive machine learning analysis. The outcome variable will be stunting; where predictions will be compared to stunting data from DHS surveys. Variables included in the training/testing data will be drought exposure, mother's height, and land under cultivation. Upon further exploratory data analysis, additional variables may be included. 
+
+The current intention is to obtain GPS data from DHS and perform a point-polygon join to place households within drought grids from SPEIbase, which cross national borders, and within agricultural grids from MapSPAM. Drought data will be averaged to a yearly interval. The underlying theory for including land under cultivation is that areas with little land under cultivation may not be impacted by drought since food is not sourced there; the theory underlying controlling for mother's height is that a taller child may still be stunted when coming from a tall genetic background.
+
+
+## Hurdles
+There are two primary hurdles in this project which the team will have to navigate:
+
+1. **GPS data availability**: If DHS does not approve access to GPS data for the household surveys, we will not be able to do an analysis which is agnostic to borders. In the absence of GPS data, the drought data will be nationally aggregated and analysis will be conducted at the national level, instead of at a continuous spatial level.
+
+2. **Creating a clear mapping between two different sets of polygons**: SPEIbase and MapSPAM both have polygons, however at different resolutions. The team will need to find a coherent mapping between the two in order to get a clear analysis which includes drought conditions and land under cultivation. Should a clear mapping not prove possible, other nutrition and food consumption variables from the DHS surveys may be used in place of the MapSPAM data.
+
+3. **Deciding on time frame**: Following yearly aggregation, the team will need to decide how much to lag the data in order to account for long term drought exposure, instead of simply including immediate drought exposure. One methodological hurdle will be deciding on the length of this lag based on the average age of children in the dataset once it is merged. The team will research other demographic analyses to decide on an appropriate time frame.
+
+
+# Additional Information
+
+### AI Disclosure
+The LaTeX code for the regression was generated by Gavin Gondalwala using Gemini 3.6 Flash on 09 Nov. 2026. Using a handwritten photo of the equation, the prompt was: "Please write me LaTeX code to render the regression equation at the top of the whiteboard in my .qmd in RStudio."
+
+

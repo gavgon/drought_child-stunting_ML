@@ -1,0 +1,207 @@
+---
+title: "EDA"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(RNetCDF)
+library(rdhs)
+library(sf)
+library(dplyr)
+```
+
+```{r}
+# Accessing SPEI
+# install.packages('RNetCDF')
+
+spei_path <- "/Users/gavinaligondalwala/ppol6803/final_project/PPOL-670_Final-Project/data/spei01.nc"
+
+spei <- open.nc(spei_path)
+
+print.nc(spei)           # lists the variables and dimensions
+```
+
+```{r}
+# Downloading DHS Surveys
+
+# Accessing DHS
+# Install and load rdhs
+# install.packages("rdhs")
+library(rdhs)
+
+# 1. Set up your DHS credentials (you will be prompted for your password)
+set_rdhs_config(
+  email = "gag103@georgetown.edu",
+  project = "Data Science for Public Policy Final Project — Drought Exposure and Child Stunting"
+)
+
+# 2. Find and download datasets automatically (e.g., all Individual Recode files for Kenya)
+
+ssa_countries <- c(
+  "AO", "BJ", "BF", "BU", "CM", "CF", "TD", "KM", "CG", "CD", 
+  "CI", "SZ", "ET", "GA", "GM", "GH", "GN", "KE", "LS", "LR", 
+  "MG", "MW", "ML", "MR", "MZ", "NM", "NI", "NG", "RW", 
+  "ST", "SN", "SL", "ZA", "SD", "TZ", "TG", "UG", "ZW", "ZM"
+)
+
+# 2. Get the most recent standard DHS survey for each selected country
+recent_surveys <- dhs_surveys(
+  countryIds = ssa_countries,
+  surveyType = "DHS"
+) |>
+  group_by(DHS_CountryCode) |>
+  slice_max(order_by = as.numeric(SurveyYear), n = 1) |>
+  ungroup()
+
+# 3. Build the dataset request matching your screenshot (Children's Recode + Stata)
+datasets <- dhs_datasets(
+  surveyIds  = recent_surveys$SurveyId,
+  fileType   = "KR", # Children's Recode
+  fileFormat = "DT"  # Stata System file (.dta)
+)
+
+# 4. Download all matching files and get local paths
+local_paths <- get_datasets(datasets$FileName)
+
+# 4. Read the first downloaded dataset directly into R
+# df <- readRDS(local_paths[[1]])
+
+```
+# (Collapsed) URL List:
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=AOKR81DT.zip&Tp=1&Ctry_Code=AO&surv_id=569&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=BJKR71DT.zip&Tp=1&Ctry_Code=BJ&surv_id=491&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=BFKR81DT.zip&Tp=1&Ctry_Code=BF&surv_id=562&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=BUKR71DT.zip&Tp=1&Ctry_Code=BU&surv_id=463&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=CMKR71DT.zip&Tp=1&Ctry_Code=CM&surv_id=511&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=CFKR31DT.zip&Tp=1&Ctry_Code=CF&surv_id=66&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=TDKR71DT.zip&Tp=1&Ctry_Code=TD&surv_id=465&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=KMKR61DT.zip&Tp=1&Ctry_Code=KM&surv_id=443&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=CGKR61DT.zip&Tp=1&Ctry_Code=CG&surv_id=388&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=CDKR81DT.zip&Tp=1&Ctry_Code=CD&surv_id=597&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=CIKR81DT.zip&Tp=1&Ctry_Code=CI&surv_id=559&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=SZKR51DT.zip&Tp=1&Ctry_Code=SZ&surv_id=259&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=ETKR8ADT.zip&Tp=1&Ctry_Code=ET&surv_id=586&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=GAKR71DT.zip&Tp=1&Ctry_Code=GA&surv_id=546&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=GMKR81DT.zip&Tp=1&Ctry_Code=GM&surv_id=555&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=GHKR8CDT.zip&Tp=1&Ctry_Code=GH&surv_id=598&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=GNKR71DT.zip&Tp=1&Ctry_Code=GN&surv_id=539&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=KEKR91DT.zip&Tp=1&Ctry_Code=KE&surv_id=635&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=LSKR81DT.zip&Tp=1&Ctry_Code=LS&surv_id=572&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=LBKR7ADT.zip&Tp=1&Ctry_Code=LB&surv_id=537&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=MDKR81DT.zip&Tp=1&Ctry_Code=MD&surv_id=560&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=MWKR81DT.zip&Tp=1&Ctry_Code=MW&surv_id=592&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=MLKR8ADT.zip&Tp=1&Ctry_Code=ML&surv_id=613&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=MRKR71DT.zip&Tp=1&Ctry_Code=MR&surv_id=553&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=MZKR82DT.zip&Tp=1&Ctry_Code=MZ&surv_id=564&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=NMKR61DT.zip&Tp=1&Ctry_Code=NM&surv_id=363&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=NIKR61DT.zip&Tp=1&Ctry_Code=NI&surv_id=407&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=NGKR8BDT.zip&Tp=1&Ctry_Code=NG&surv_id=609&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=OSKR01DT.zip&Tp=1&Ctry_Code=OS&surv_id=8&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=RWKR91DT.zip&Tp=1&Ctry_Code=RW&surv_id=624&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=STKR51DT.zip&Tp=1&Ctry_Code=ST&surv_id=318&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=SNKR8SDT.zip&Tp=1&Ctry_Code=SN&surv_id=611&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=SLKR7ADT.zip&Tp=1&Ctry_Code=SL&surv_id=545&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=ZAKR71DT.zip&Tp=1&Ctry_Code=ZA&surv_id=390&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=SDKR01DT.zip&Tp=1&Ctry_Code=SD&surv_id=29&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=TZKR82DT.zip&Tp=1&Ctry_Code=TZ&surv_id=578&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=TGKR61DT.zip&Tp=1&Ctry_Code=TG&surv_id=328&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=UGKR7BDT.zip&Tp=1&Ctry_Code=UG&surv_id=504&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=ZMKR81DT.zip&Tp=1&Ctry_Code=ZM&surv_id=610&dm=1&dmode=nm
+https://dhsprogram.com/customcf/legacy/data/download_dataset.cfm?Filename=ZWKR72DT.zip&Tp=1&Ctry_Code=ZW&surv_id=475&dm=1&dmode=nm
+
+
+
+
+
+
+
+
+```{r}
+# Downloading GPS data from DHS
+
+# 1. Query the Geographic Data (GPS) files for the same surveys
+gps_datasets <- dhs_datasets(
+  surveyIds = recent_surveys$SurveyId,
+  fileType  = "GE" # Geographic Data (Cluster GPS coordinates)
+)
+
+# 2. Download the GPS zip files (use download_option = "zip" since they are shapefiles)
+# Set clear_cache = TRUE if you only recently got DHS approval for GPS data
+gps_zip_paths <- get_datasets(
+  dataset_filenames = gps_datasets$FileName,
+  download_option   = "zip",
+  clear_cache       = TRUE
+)
+
+# Reading files into R
+# 1. Create a folder for extracted shapefiles and unzip all archives
+dir.create("dhs_gps_unzipped", showWarnings = FALSE)
+lapply(gps_zip_paths, unzip, exdir = "dhs_gps_unzipped")
+
+# 2. List all extracted .shp files
+shp_files <- list.files("dhs_gps_unzipped", pattern = "\\.shp$", full.names = TRUE, ignore.case = TRUE)
+
+# 3. Read each shapefile into a named list of sf data frames
+gps_list <- lapply(shp_files, st_read, quiet = TRUE)
+names(gps_list) <- tools::file_path_sans_ext(basename(shp_files))
+
+# Optional: Unpack into individual objects in your Global Environment
+# list2env(gps_list, envir = .GlobalEnv)
+
+```
+
+```{r}
+# Extracting Variables
+
+my_vars <- c(
+  # IDs, design, dates
+  "caseid","bidx","v000","v001","v002","v005","v021","v022","v024","v025",
+  "v006","v007","v008","b3",
+  # outcome + sample
+  "hw70","hw1","b5","hw13",
+  # child
+  "b4","bord","b0","b11","m18","m19",
+  # mother
+  "v011","v012","v106","v133","v438","v445","v501","v201","v206","v207","v212",
+  # household
+  "v136","v137","v151","v152","v190","v191","v113","v115","v116","v160",
+  "v161","v119","v120","v121","v122","v127","v104",
+  # access, land, place, partner
+  "v467d","v481","v483a","v745b","v040","v701","v715"
+)
+
+qs <- search_variables(datasets$FileName, variables = my_vars)
+
+# coverage check: how many of your surveys have each variable
+qs |> count(variable, sort = TRUE) |> print()
+
+extracted_list <- extract_dhs(qs, add_geo = FALSE)
+kr <- rbind_labelled(extracted_list, labels = "concatenate")
+##
+qs |> count(variable, sort = TRUE) |> as_tibble() |> print(n = Inf)
+
+
+
+drop <- c("OSKR01DT","SDKR01DT","CFKR31DT","SZKR51DT","STKR51DT",
+          "CGKR61DT","LBKR7ADT","MDKR81DT","KEKR91DT")
+datasets_use <- datasets |> filter(!substr(FileName, 1, 8) %in% drop)
+qs <- search_variables(datasets_use$FileName, variables = my_vars)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
