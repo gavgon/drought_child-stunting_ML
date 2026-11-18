@@ -1,4 +1,12 @@
 # -----------------------------------------------------------------------------
+# AI Disclaimer:
+# Portions of this extraction script and joins were created with
+# the aid of Google Gemini Edu 4 Hydrogen at the direction of the author.
+# DHS variables/indices were created and updated by the author as per
+# the DHS STANDARD RECODE MANUAL.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # 0. Packages
 # -----------------------------------------------------------------------------
 # install.packages(c("tidyverse", "rdhs", "sf", "terra", "haven"))
