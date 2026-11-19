@@ -6,9 +6,9 @@
 
 ---
 # General Notes
-Opted as 2010 for a cutoff. Keeps the survey data within roughly a decade of the 2020 MapSPAM cropland snapshot, so the agricultural conditions we attach to each cluster plausibly reflect those children experienced in early life. It also limits the sample to DHS-6 and later surveys, which share comparable variable definitions.
+Opted as 2010 for a starting point. Keeps the survey data within roughly a decade of the 2020 MapSPAM cropland snapshot, so the agricultural conditions we attach to each cluster plausibly reflect those children experienced in early life. It also limits the sample to DHS-6 and later surveys, which share comparable variable definitions.
 
-File      Survey	                          Why dropped
+File        Survey	                          Why dropped
 OSKR01DT	Ondo State, Nigeria, 1986	        Too old
 SDKR01DT	Sudan, 1989–90	                  Too old
 CFKR31DT	Central African Republic, 1994–95	Too old

@@ -123,7 +123,7 @@ lm_cv <- lm_wf |>
 
 # select the best model based on the "rmse" metric
 lm_best <- lm_cv |>
-  select_best(metric = "rmse")
+  select_best(metric = "roc_auc")
 
 # use the finalize_workflow() function with your workflow and the best model 
 # to update (or "finalize") your workflow by modifying the line below
@@ -134,12 +134,13 @@ lm_final <- finalize_workflow(
 
 # fit to the training data and extract coefficients
 lm_coefs <- lm_final |>
-  fit(data = ames_train) |>
+  fit(data = kids_train) |>
   extract_fit_parsnip() |>
   vi(lambda = lasso_best$penalty)
 
 
-
+### Using Results
+results <- load("/Users/gavinaligondalwala/ppol6803/final_project/PPOL-670_Final-Project/results.RData")
 
 
 
