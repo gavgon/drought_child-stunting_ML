@@ -1,0 +1,67 @@
+---
+title: "Assignment 07"
+author: "Gavin Gondalwala, Abhinav Dutt, Zheng Gu"
+format:
+  html:
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+editor: source
+editor_options: 
+  chunk_output_type: console
+---
+
+# Stretch Exercise
+
+## Question 2
+
+### Using Results
+
+Visualization Ideas: \* Stunting share at grid cell \* Bar graph of which years are in the dataset -\> label countries per year in the bar/graph \* Distribution of kids heights across SSA -\> haz \* Vertical line: median global height for kids \* Chloropleth for drought
+
+Three specifications - model based only on non-survey data, model based only on survey data, model based on both
+
+Predictor variables - list potential survey and non survey variables separately from codebook 
+Preprocessing for each variable? 
+2 different types of preprocessing? --> impute median vs impute KNN
+
+different algos - lasso & logistic regression (Lasso hyperparameter is lambda via tune grid)
+
+Use tidymodels for this part: Implement non survey model 2 resampling methods? Hyperparameter tuning - use tune
+
+## Part 2
+
+Variables included in the non-survey model:
+
+- `LATNUM` Cluster latitude in decimal degrees (WGS84)
+  - PREPROCESSING HERE
+- `LONGNUM` Cluster longitude in decimal degrees (WGS84)
+  - PREPROCESSING HERE
+- `ALT_DEM` Cluster elevation in meters above sea level from Digital Elevation Model 
+- `URBAN_RURA` Cluster urban/rural designation (`"U"` = Urban, `"R"` = Rural)
+
+
++ LONGNUM + ALT_DEM + URBAN_RURA + spei_mean_utero + spei_mean_yr1 + spei_mean_yr2 + spei_mean_rec + drought_share_utero + drought_share_yr1 + drought_share_yr2 + drought_share_rec + crop_ha_mean + staple_ha_mean + rainfed_ha + rainfed_share,
+
+```{r}
+library(tidyverse)
+
+results <- load("/Users/gavinaligondalwala/ppol6803/final_project/PPOL-670_Final-Project/results.RData")
+
+kids_train |>
+  group_by(cc) |>
+  summarise(year = min(v007)) |>
+  ggplot(aes(x = year, group = cc)) +
+  geom_bar(fill = "purple", color = "darkblue" ) +
+  scale_x_continuous(breaks = seq(2012, 2025, by = 1)) +
+  geom_text(aes(label = cc), stat = "count",
+            position = position_stack(vjust = 0.5), size = 3, color = "white") +
+  labs(x = "Survey start year",
+       y = "Number of countries",
+       title = "Countries included in each DHS Survey year",
+       caption = "Source: Demographic and Health Surveys Program",
+       ) +
+  theme_minimal()
+
+```
