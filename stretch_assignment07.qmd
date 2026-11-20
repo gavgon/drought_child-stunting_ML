@@ -49,6 +49,7 @@ library(tidyverse)
 
 results <- load("/Users/gavinaligondalwala/ppol6803/final_project/PPOL-670_Final-Project/results.RData")
 
+# Countries included per year
 kids_train |>
   group_by(cc) |>
   summarise(year = min(v007)) |>
@@ -63,5 +64,49 @@ kids_train |>
        caption = "Source: Demographic and Health Surveys Program",
        ) +
   theme_minimal()
+
+# Distribution of heights
+
+###
+kids_train |>
+  ggplot() +
+  geom_density(aes(x = haz), kernel = "gaussian")+
+  labs(
+    x = "Height-for-age z-score",
+    y = "Density",
+    title = "Height-for-age Z-score across SSA",
+    subtitle = "0 is the global median and −2 is the stunting cutoff",
+    caption = "Source: Demographic and Health Surveys Program"
+    )
+###
+
+med_haz <- median(kids_train$haz, na.rm = TRUE)
+
+kids_train |>
+  ggplot() +
+  geom_density(aes(x = haz), kernel = "gaussian") +
+  geom_vline(xintercept = med_haz, color = "firebrick") +
+    geom_vline(xintercept = -2, linetype = "dashed") +
+  labs(
+    x = "Height-for-age z-score",
+    y = "Density",
+    title = "Height-for-age Z-score across SSA",
+    subtitle = "0 is the global median and −2 is the stunting cutoff",
+    caption = "Source: Demographic and Health Surveys Program"
+    ) +
+  theme_minimal()
+
+# Add X scale at bottom
+# Add labels
+# Flip dashed/solid line
+
+
+
+
+
+
+
+  
+
 
 ```
