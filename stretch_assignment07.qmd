@@ -14,35 +14,67 @@ editor_options:
 
 # Stretch Exercise
 
-## Question 2
+## Question 1a
 
-### Using Results
+The data combine [Demographic and Health Surveys](https://dhsprogram.com/) records with SPEI drought measures and IFPRI MapSPAM crop data. Each row is a living child under age five with a valid height measure and cluster location. The data cover child and household traits, maternal characteristics, drought exposure, crops, and geography. We predict whether a child is stunted (`haz < -2`) to help guide nutrition screening and support in Sub-Saharan Africa.
 
-Visualization Ideas: \* Stunting share at grid cell \* Bar graph of which years are in the dataset -\> label countries per year in the bar/graph \* Distribution of kids heights across SSA -\> haz \* Vertical line: median global height for kids \* Chloropleth for drought
+## Question 1b
 
-Three specifications - model based only on non-survey data, model based only on survey data, model based on both
+```{r}
+library(tidyverse)
+library(rdhs)
+library(sf)
+library(terra)
+library(haven)
+library(tidymodels)
+library(vip)
+library(parsnip)
 
-Predictor variables - list potential survey and non survey variables separately from codebook 
-Preprocessing for each variable? 
-2 different types of preprocessing? --> impute median vs impute KNN
+kids_merged <- readRDS("kids_merged.rds")
+kids_merged$stunted <- factor(kids_merged$stunted, levels = c("yes", "no"))
 
-different algos - lasso & logistic regression (Lasso hyperparameter is lambda via tune grid)
+set.seed(103)
 
-Use tidymodels for this part: Implement non survey model 2 resampling methods? Hyperparameter tuning - use tune
+split <- initial_split(
+  kids_merged, 
+  prop = 0.75,
+  strata = stunted
+) # Strata ensures that there is an even proportional share of stunted kids in training and testing data
 
-## Part 2
+kids_train <- training(x = split) 
 
-Variables included in the non-survey model:
+kids_test <- testing(x = split)
+```
 
-- `LATNUM` Cluster latitude in decimal degrees (WGS84)
-  - PREPROCESSING HERE
-- `LONGNUM` Cluster longitude in decimal degrees (WGS84)
-  - PREPROCESSING HERE
-- `ALT_DEM` Cluster elevation in meters above sea level from Digital Elevation Model 
-- `URBAN_RURA` Cluster urban/rural designation (`"U"` = Urban, `"R"` = Rural)
+### Data split and target
 
+The file has 170,155 children from surveys conducted between 2012 and 2025. The target is `stunted`: “yes” when height-for-age z-score (`haz`) is below −2, and “no” otherwise. This binary outcome fits the screening goal. The file has 54,086 stunted children (31.8%) and 116,069 not stunted children (68.2%).
 
-+ LONGNUM + ALT_DEM + URBAN_RURA + spei_mean_utero + spei_mean_yr1 + spei_mean_yr2 + spei_mean_rec + drought_share_utero + drought_share_yr1 + drought_share_yr2 + drought_share_rec + crop_ha_mean + staple_ha_mean + rainfed_ha + rainfed_share,
+The code makes a reproducible, stratified 75/25 split. Stratifying keeps the share of stunted children similar in both sets. I use the training set for exploration and model selection, then evaluate the chosen model on the held-out test set.
+
+## Question 1c — Training-set exploration
+
+The plots and summaries below use only the training set. The codebook explains that second-year drought measures are missing for many children who were not yet 12 months old. `rainfed_share` is missing where there is no harvested cropland. These missing values have known reasons, so I keep the records and impute predictors within each training fold. The codebook also documents how special DHS codes and derived variables were handled.
+
+```{r}
+# Class balance and missingness in the candidate non-survey predictors
+kids_train |>
+  count(stunted) |>
+  mutate(share = n / sum(n))
+
+non_survey_predictors <- c(
+  "LATNUM", "LONGNUM", "ALT_DEM", "URBAN_RURA",
+  "spei_mean_utero", "spei_mean_yr1", "spei_mean_yr2", "spei_mean_rec",
+  "drought_share_utero", "drought_share_yr1", "drought_share_yr2",
+  "drought_share_rec", "crop_ha_mean", "staple_ha_mean", "rainfed_ha",
+  "rainfed_share"
+)
+
+kids_train |>
+  summarise(across(all_of(non_survey_predictors), ~ sum(is.na(.x)))) |>
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_n") |>
+  arrange(desc(missing_n))
+```
 
 ```{r}
 library(tidyverse)
@@ -65,20 +97,29 @@ kids_train |>
        ) +
   theme_minimal()
 
-# Distribution of heights
-
-###
+# Country labels underlying the year counts
 kids_train |>
-  ggplot() +
-  geom_density(aes(x = haz), kernel = "gaussian")+
+  distinct(cc, v007) |>
+  arrange(v007, cc)
+
+# Cluster-level stunting share; DHS GPS displacement means this is exploratory.
+kids_train |>
+  group_by(kr_file, cluster_id, LATNUM, LONGNUM) |>
+  summarise(stunting_share = mean(stunted == "yes"), .groups = "drop") |>
+  ggplot(aes(x = LONGNUM, y = LATNUM, color = stunting_share)) +
+  geom_point(alpha = 0.65, size = 1.4) +
+  coord_quickmap() +
+  scale_color_viridis_c(labels = scales::label_percent()) +
   labs(
-    x = "Height-for-age z-score",
-    y = "Density",
-    title = "Height-for-age Z-score across SSA",
-    subtitle = "0 is the global median and −2 is the stunting cutoff",
+    x = "Longitude", y = "Latitude", color = "Stunted",
+    title = "Child stunting share by DHS cluster",
+    subtitle = "Training data; GPS locations are displaced for confidentiality",
     caption = "Source: Demographic and Health Surveys Program"
-    )
-###
+  ) +
+  theme_minimal()
+
+
+# Distribution of heights
 
 med_haz <- median(kids_train$haz, na.rm = TRUE)
 
@@ -104,7 +145,106 @@ kids_train |>
 
 
 
-  
 
 
 ```
+
+
+### Question 1d — Error metric and cost of errors
+
+A false negative means a stunted child is predicted not stunted. This is more costly than a false positive because it may delay support. 
+
+## Question 2a — Candidate model specifications
+
+All three models predict `stunted`. I leave out `haz` and `hw70` because they define the target and would reveal the answer. I impute missing values, convert categories to indicator columns, and standardize numeric predictors for penalized logistic regression. Tree models do not need standardization. Preprocessing is learned within each training fold.
+
+1.  **Non-survey context model:** `LATNUM`, `LONGNUM`, `ALT_DEM`, `URBAN_RURA`, the four `spei_mean_*` measures, four `drought_share_*` measures, `crop_ha_mean`, `staple_ha_mean`, `rainfed_ha`, and `rainfed_share`. Median-impute numeric values, one-hot encode `URBAN_RURA`, and standardize numeric predictors for logistic regression. Candidate algorithms are L1-penalized logistic regression (tune the penalty) and a CART tree (tune cost-complexity).
+
+2.  **Survey household and child model:** `age_months`, `male`, `twin`, `first_birth`, `birth_int`, `birth_wt_kg`, `size_birth`, `mom_age_birth`, `mom_height_cm`, `mom_bmi`, `mom_educ_yrs`, `partner_educ`, `has_partner`, `child_deaths`, `wealth_z`, `improved_water`, `water_mins`, `improved_toilet`, `shared_toilet`, `clean_fuel`, `electricity`, `tv`, `fridge`, `finished_floor`, `urban`, `hh_size`, `n_under5`, `female_head`, `head_age`, `owns_land`, `distance_problem`, and `insured`. Median-impute numeric values, encode categorical values, and standardize numeric predictors for logistic regression. Candidate algorithms are L1-penalized logistic regression and random forest (tune split and leaf-size settings).
+
+3.  **Combined model:** all predictors in the first two models, with the same imputation, encoding, and scaling. Candidate algorithms are L1-penalized logistic regression and random forest. Tune the penalty for logistic regression and the split and leaf-size settings for the forest.
+
+Comparing the three models shows whether climate, crop, and geographic data add predictive value beyond household and child traits.
+
+## Question 3a — Estimation on the training data
+
+We use 10-fold stratified cross-validation to tune non-survey L1-penalized logistic regression. The latest script uses median imputation, dummy encoding, and normalization inside each fold. We use the training data to tune the model and keep the test data for final evaluation.
+
+In the saved `result 2.RData` run, `lasso_best` selected a penalty of `1e-10`. Its 10-fold averages were ROC AUC **0.6111** (SD 0.0035), accuracy **0.6831** (SD 0.0012), and Brier score **0.2097** (SD 0.0005). Accuracy is close to the 68.2% majority-class benchmark, and the AUC shows modest separation. These numbers are from the saved run, which used KNN imputation; rerun cross-validation to get results for the latest median-imputation code.
+
+The saved `lasso_coefs` ranks predictors by absolute coefficient size. The highest are `drought_share_rec` (0.262), `URBAN_RURA_U` (0.250), `LONGNUM` (0.228), `staple_ha_mean` (0.135), `LATNUM` (0.135), and `spei_mean_rec` (0.135). These are model associations, not causal effects. `lasso_final` is the finalized workflow; the code below fits it on the training data, creates the coefficient table, and reports test metrics.
+
+```{r}
+set.seed(103)
+
+non_survey_rec <- recipe(
+  stunted ~ LATNUM + LONGNUM + ALT_DEM + URBAN_RURA +
+    spei_mean_utero + spei_mean_yr1 + spei_mean_yr2 + spei_mean_rec +
+    drought_share_utero + drought_share_yr1 + drought_share_yr2 +
+    drought_share_rec + crop_ha_mean + staple_ha_mean + rainfed_ha +
+    rainfed_share,
+  data = kids_train
+) |>
+  step_impute_median(all_numeric_predictors()) |>
+  step_dummy(all_nominal_predictors()) |>
+  step_normalize(all_predictors())
+
+lasso_mod <- logistic_reg(penalty = tune(), mixture = 1) |>
+  set_engine("glmnet")
+
+lasso_wf <- workflow() |>
+  add_recipe(non_survey_rec) |>
+  add_model(lasso_mod)
+
+set.seed(103)
+folds <- vfold_cv(kids_train, v = 10, strata = stunted)
+lasso_grid <- grid_regular(penalty(), levels = 10)
+
+lasso_cv <- lasso_wf |>
+  tune_grid(
+    resamples = folds,
+    grid = lasso_grid,
+    control = control_grid(verbose = TRUE)
+  )
+
+lasso_best <- lasso_cv |>
+  select_best(metric = "roc_auc")
+
+lasso_final <- finalize_workflow(lasso_wf,  parameters = lasso_best
+)
+
+lasso_coefs <- lasso_fit |>
+  extract_fit_parsnip() |>
+  vi(lambda = lasso_best$penalty)
+
+
+```
+
+## Exploratory visualizations and earlier planning notes
+
+### Using Results
+
+The original plan was to show stunting by location, survey years and countries, height-for-age, and drought. The plots below show survey years, cluster stunting shares, and height-for-age. DHS GPS locations are displaced, so treat the cluster map as exploratory; a choropleth would need an agreed map area and aggregation rule.
+
+The three model specifications are listed in Question 2.
+
+The predictors and preprocessing steps are listed above. The current estimation recipe uses median imputation, dummy encoding, and normalization.
+
+The candidate methods include L1 logistic regression and tree models. Cross-validation tunes their hyperparameters.
+
+Question 3 fits the non-survey logistic model with `tidymodels` and stratified 10-fold cross-validation.
+
+## Non-survey predictors and preprocessing details
+
+Variables included in the non-survey model:
+
+- `LATNUM` Cluster latitude in decimal degrees (WGS84); median-impute if missing and standardize for penalized logistic regression.
+
+- `LONGNUM` Cluster longitude in decimal degrees (WGS84); median-impute if missing and standardize for penalized logistic regression.
+
+- `ALT_DEM` Cluster elevation in meters above sea level from Digital Elevation Model
+
+- `URBAN_RURA` Cluster urban/rural designation (`"U"` = Urban, `"R"` = Rural)
+
+- `ALT_DEM`, `URBAN_RURA`, `spei_mean_utero`, `spei_mean_yr1`, `spei_mean_yr2`, `spei_mean_rec`, `drought_share_utero`, `drought_share_yr1`, `drought_share_yr2`, `drought_share_rec`, `crop_ha_mean`, `staple_ha_mean`, `rainfed_ha`, and `rainfed_share`; median-impute numeric missing values, one-hot encode the urban/rural designation, and standardize predictors for the penalized model.
+
