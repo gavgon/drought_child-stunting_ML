@@ -14,35 +14,131 @@ editor_options:
 
 # Stretch Exercise
 
+## Question 1
+
+**Data.** We combine three public sources into one child-level dataset. The **Demographic and Health Surveys (DHS)** provide household surveys from about 31 Sub-Saharan African countries (the most recent survey per country from 2010 onward, all with GPS). From each survey's Children's Recode we keep living children under 5 whose height was measured, along with characteristics of the child, mother, and household. Each child is linked through their survey cluster's GPS location to two global datasets. **SPEIbase** gives a monthly drought index (SPEI) on a 0.5° grid, which we average over each child's time in the womb, first and second years of life, and the year before the interview. **MapSPAM 2020** (IFPRI) gives harvested crop area on a ~10 km grid, which we average within 10 km of each cluster. The result has one row per child, with survey, drought, and cropland variables.
+
+**Prediction application.** We predict whether a child under 5 is stunted, to help target nutrition programs as climate shocks grow and food aid shrinks. We compare a model built only on globally available, non-survey data (location, drought, cropland) with one built on survey data. If the non-survey model performs reasonably, it could flag likely stunting hotspots in places and years without a recent household survey.
+
+**Target variable.** `stunted` is a binary outcome (yes/no) equal to "yes" when a child's height-for-age z-score (`haz`, from DHS `hw70`) is below −2. That means the child is more than two standard deviations shorter than the WHO reference median for their age and sex. Stunting reflects long-term undernutrition and illness, so it's a cumulative measure of a child's early-life conditions.
+
+**Error metric.** Our primary metric is **ROC AUC**, the probability that the model ranks a randomly chosen stunted child as higher-risk than a randomly chosen non-stunted child (0.5 = coin flip, 1 = perfect). We chose it because about a third of children are stunted, so plain accuracy is misleading: a model that predicts "not stunted" for everyone would be about 67% accurate and useless. AUC also doesn't depend on a single cutoff, which suits a model meant to *rank* children or places by risk for targeting. We also report sensitivity at the chosen threshold, because AUC alone doesn't say how many stunted children are actually caught.
+
+**Costs of errors.** A **false negative** (a stunted child predicted as not stunted) is the more costly error. That child, or that community, misses nutrition support during the first few years of life, when stunting does lasting damage to health, learning, and earnings that is hard to reverse later. A **false positive** (a non-stunted child flagged as stunted) mostly costs program resources, such as a screening visit or supplements for a child who didn't strictly need them, and those children often still benefit. So we favor a lower classification threshold that catches more stunted children, accepting more false positives. As a rough benchmark, survey-based stunting models in the literature reach AUCs of about 0.65–0.80, so we'd treat an AUC below about 0.60 as too weak for targeting individual children. For the non-survey model, we judge it mainly on how well it ranks places rather than individual children.
+
 ## Question 2
 
-### Using Results
-
-Visualization Ideas: \* Stunting share at grid cell \* Bar graph of which years are in the dataset -\> label countries per year in the bar/graph \* Distribution of kids heights across SSA -\> haz \* Vertical line: median global height for kids \* Chloropleth for drought
-
-Three specifications - model based only on non-survey data, model based only on survey data, model based on both
-
-Predictor variables - list potential survey and non survey variables separately from codebook 
-Preprocessing for each variable? 
-2 different types of preprocessing? --> impute median vs impute KNN
-
-different algos - lasso & logistic regression (Lasso hyperparameter is lambda via tune grid)
-
-Use tidymodels for this part: Implement non survey model 2 resampling methods? Hyperparameter tuning - use tune
-
-## Part 2
+We compare three specifications that differ only in their data source: (1) a non-survey model using only globally available geospatial data (GPS location, elevation, SPEI drought exposure, and MapSPAM cropland), (2) a survey model using only DHS household, mother, and child characteristics, and (3) a combined model using both. Comparing them shows how much predictive power is lost when no household survey is available, which tells us whether the non-survey model could be used to flag likely stunting hotspots in places without recent DHS data.
 
 Variables included in the non-survey model:
 
+All numeric variables get the same three recipe steps, in this order: missing values are filled with the training-data median or KNN (`step_impute_median()` or `step_impute_KNN()`), the categorical variable is turned into a 0/1 dummy (`step_dummy()`), and every predictor is centered and scaled to mean 0, SD 1 (`step_normalize()`) so LASSO penalizes them on the same scale. The notes below cover anything extra done to each variable.
+
 - `LATNUM` Cluster latitude in decimal degrees (WGS84)
-  - PREPROCESSING HERE
+  - Clusters recorded at 0,0 (missing GPS) were dropped before modeling. Normalized in the recipe.
 - `LONGNUM` Cluster longitude in decimal degrees (WGS84)
-  - PREPROCESSING HERE
-- `ALT_DEM` Cluster elevation in meters above sea level from Digital Elevation Model 
+  - Same as latitude: missing-GPS clusters dropped, then normalized.
+- `ALT_DEM` Cluster elevation in meters above sea level from Digital Elevation Model
+  - Taken directly from the DHS GPS file. Normalized in the recipe. (DHS codes missing elevation as 9999, which should be set to `NA` before imputing.)
 - `URBAN_RURA` Cluster urban/rural designation (`"U"` = Urban, `"R"` = Rural)
+  - Converted to a single 0/1 dummy variable (rural is the reference category).
+- `spei_mean_utero` Mean SPEI drought index in the 9 months before birth
+  - SPEI was pulled at each cluster's location for every month, then averaged over this window for each child. Median-imputed and normalized.
+- `spei_mean_yr1` Mean SPEI in the child's first year of life (months 0–11)
+  - Same averaging as above. Median-imputed and normalized.
+- `spei_mean_yr2` Mean SPEI in the child's second year of life (months 12–23)
+  - Missing for children under 12 months, since this window hasn't happened yet. Those values are median-imputed, then normalized.
+- `spei_mean_rec` Mean SPEI in the 12 months before the interview
+  - Partly missing for surveys after December 2024, where SPEI data end. Median-imputed and normalized.
+- `drought_share_utero` Share of months in drought (SPEI < −1) in the 9 months before birth
+  - Calculated as the proportion of months in the window below −1, so it runs from 0 to 1. Median-imputed and normalized.
+- `drought_share_yr1` Share of months in drought in the first year of life
+  - Same calculation as above. Median-imputed and normalized.
+- `drought_share_yr2` Share of months in drought in the second year of life
+  - Missing for children under 12 months. Median-imputed and normalized.
+- `drought_share_rec` Share of months in drought in the 12 months before the interview
+  - Same calculation. Median-imputed and normalized.
+- `crop_ha_mean` Average harvested crop area (hectares) per MapSPAM cell within 10 km of the cluster
+  - MapSPAM 2020 crop areas were summed across all crops, then averaged over a 10 km buffer around each cluster to account for DHS's GPS displacement. Normalized.
+- `staple_ha_mean` Average harvested area of staple crops (cereals, roots, beans) within 10 km
+  - Same buffer averaging, using staple crops only. Normalized.
+- `rainfed_ha` Average rainfed harvested crop area within 10 km
+  - Same buffer averaging, using MapSPAM's rainfed-only layer. Normalized.
+- `rainfed_share` Share of harvested crop area that is rainfed (rainfed ÷ total)
+  - Undefined (`NaN`) where a cluster has no cropland. Treated as missing, median-imputed, then normalized.
+  
+Variables included in the survey model:
 
+These use the same recipe steps as the non-survey model (median imputation, dummy coding, normalization). Before the recipe, DHS special codes (e.g. 9996 "not weighed", 98 "don't know") were converted to `NA` in `data_script.R`, and categorical DHS codes were recoded into simple 0/1 indicators so they mean the same thing in every country.
 
-+ LONGNUM + ALT_DEM + URBAN_RURA + spei_mean_utero + spei_mean_yr1 + spei_mean_yr2 + spei_mean_rec + drought_share_utero + drought_share_yr1 + drought_share_yr2 + drought_share_rec + crop_ha_mean + staple_ha_mean + rainfed_ha + rainfed_share,
+- `age_months` Child's age in months (`hw1`)
+  - No missing values. Normalized.
+- `male` Child is male (1 = male, 0 = female; from `b4`)
+  - Recoded from DHS codes to 0/1. Normalized.
+- `twin` Child is a twin (from `b0`)
+  - Recoded to 0/1 (any multiple birth = 1). Normalized.
+- `bord` Birth order
+  - Used as is. Normalized.
+- `first_birth` Child is the mother's first birth
+  - Created because the birth interval does not exist for first births. 0/1, normalized.
+- `birth_int` Months since the previous birth (`b11`)
+  - Set to 0 for first births, which `first_birth` flags. Normalized.
+- `birth_wt_kg` Birth weight in kilograms (`m19`)
+  - Codes 9996/9998 (not weighed, don't know) set to `NA`, then grams converted to kg. Only asked for recent births, so it has many missing values. Median-imputed, normalized.
+- `size_birth` Mother's report of size at birth, 1 = very large to 5 = very small (`m18`)
+  - "Don't know" set to `NA`. Median-imputed, normalized.
+- `mom_age_birth` Mother's age at this child's birth, in years
+  - Calculated from the child's and mother's birth dates (`b3 − v011`) and divided by 12. Normalized.
+- `mom_height_cm` Mother's height in centimeters (`v438`)
+  - Flag codes (9994+) set to `NA`, then converted from millimeters to centimeters. Some surveys only measured a subsample of mothers. Median-imputed, normalized.
+- `mom_bmi` Mother's body mass index (`v445`)
+  - Flag codes set to `NA`, then divided by 100. Median-imputed, normalized.
+- `mom_educ_yrs` Mother's years of education (`v133`)
+  - "Don't know" codes (97+) set to `NA`. Median-imputed, normalized.
+- `has_partner` Mother is married or living with a partner (from `v501`)
+  - Recoded to 0/1. Normalized.
+- `partner_educ` Partner's years of education (`v715`)
+  - Missing for mothers without a partner and for "don't know" answers. Median-imputed, normalized.
+- `child_deaths` Number of the mother's children who have died (`v206` + `v207`)
+  - Sons and daughters who died summed into one count. Normalized.
+- `wealth_z` Household wealth index score (`v191`)
+  - DHS builds the score separately for each country, so it was standardized *within each survey* to make it comparable across countries. Normalized.
+- `urban` Urban residence (from `v025`)
+  - Recoded to 0/1. Normalized.
+- `hh_size` Number of household members (`v136`)
+  - Used as is. Normalized.
+- `n_under5` Number of children under 5 in the household (`v137`)
+  - Used as is. Normalized.
+- `female_head` Household head is female (from `v151`)
+  - Recoded to 0/1. Normalized.
+- `head_age` Age of household head (`v152`)
+  - "Don't know" codes set to `NA`. Median-imputed, normalized.
+- `improved_water` Household uses an improved drinking-water source (from `v113`)
+  - Country-specific source codes grouped into improved/unimproved using the WHO/UNICEF definition. 0/1, normalized.
+- `water_mins` Minutes to get to the water source (`v115`)
+  - "On premises" (996) set to 0; "don't know" set to `NA`. Median-imputed, normalized.
+- `improved_toilet` Household has an improved toilet (from `v116`)
+  - Toilet codes grouped into improved/unimproved (WHO/UNICEF definition). 0/1, normalized.
+- `shared_toilet` Toilet is shared with other households (`v160`)
+  - Recoded to 0/1. Normalized.
+- `clean_fuel` Household cooks with electricity, LPG, natural gas, or biogas (from `v161`)
+  - Fuel codes grouped into clean vs. solid/other fuels. 0/1, normalized.
+- `electricity`, `radio`, `tv`, `fridge` Household owns or has each item (`v119`–`v122`)
+  - Each recoded to 0/1. Normalized.
+- `finished_floor` Household has a finished floor (from `v127`)
+  - Floor codes grouped: finished (codes 30–39) = 1, natural or rudimentary = 0. Normalized.
+- `owns_land` Mother owns land alone or jointly (from `v745b`)
+  - Recoded to 0/1. Missing in one survey, which is median-imputed. Normalized.
+- `distance_problem` Distance to a health facility is a big problem for the mother (`v467d`)
+  - Recoded to 0/1. Normalized.
+- `insured` Mother has any health insurance (`v481`)
+  - Recoded to 0/1. Normalized.
+
+Country code (`cc`), cluster ID, and survey weights are not used as predictors. Leaving out country lets the model be applied to countries it was not trained on.
+  
+As noted above, the two main types of preprocessing are `step_impute_median()` and `step_impute_KNN()`. Imputing the nearest neighbor is most appropriate for our analysis, as it will ensure that the observations being imputed are close geographically. However, the trade off is that it takes an extremely long time.
+
+We are using logistic regression and LASSO regression as two algorithms to see if there are notable differences. The LASSO hyperparameter is Lambda via a tune grid to see if there are variables resulting in a heavy penalty or with no predictive power.
 
 ```{r}
 library(tidyverse)
