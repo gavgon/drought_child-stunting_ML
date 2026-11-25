@@ -140,10 +140,9 @@ kids_train |>
   theme_minimal()
 ```
 
-
 ### Question 1d — Error metric and cost of errors
 
-A false negative means a stunted child is predicted not stunted. This is more costly than a false positive because it may delay support. 
+A false negative means a stunted child is predicted not stunted. This is more costly than a false positive because it may delay support. For this model, we will be focusing on ROC AUC as an error metric.
 
 ## Question 2a — Candidate model specifications
 
@@ -204,7 +203,7 @@ lasso_best <- lasso_cv |>
 lasso_final <- finalize_workflow(lasso_wf,  parameters = lasso_best
 )
 
-lasso_coefs <- lasso_fit |>
+lasso_coefs <- lasso_fit |> #is this syntax correct? verify later!
   extract_fit_parsnip() |>
   vi(lambda = lasso_best$penalty)
 
@@ -227,7 +226,6 @@ Question 3 fits the non-survey logistic model with `tidymodels` and stratified 1
 
 ## Non-survey predictors and preprocessing details
 
-
 Variables included in the non-survey model:
 
 All numeric variables get the same three recipe steps, in this order: missing values are filled with the training-data median or KNN (`step_impute_median()` or `step_impute_KNN()`), the categorical variable is turned into a 0/1 dummy (`step_dummy()`), and every predictor is centered and scaled to mean 0, SD 1 (`step_normalize()`) so LASSO penalizes them on the same scale. The notes below cover anything extra done to each variable.
@@ -248,7 +246,7 @@ All numeric variables get the same three recipe steps, in this order: missing va
   - Missing for children under 12 months, since this window hasn't happened yet. Those values are median-imputed, then normalized.
 - `spei_mean_rec` Mean SPEI in the 12 months before the interview
   - Partly missing for surveys after December 2024, where SPEI data end. Median-imputed and normalized.
-- `drought_share_utero` Share of months in drought (SPEI < −1) in the 9 months before birth
+- `drought_share_utero` Share of months in drought (SPEI \< −1) in the 9 months before birth
   - Calculated as the proportion of months in the window below −1, so it runs from 0 to 1. Median-imputed and normalized.
 - `drought_share_yr1` Share of months in drought in the first year of life
   - Same calculation as above. Median-imputed and normalized.
@@ -264,7 +262,7 @@ All numeric variables get the same three recipe steps, in this order: missing va
   - Same buffer averaging, using MapSPAM's rainfed-only layer. Normalized.
 - `rainfed_share` Share of harvested crop area that is rainfed (rainfed ÷ total)
   - Undefined (`NaN`) where a cluster has no cropland. Treated as missing, median-imputed, then normalized.
-  
+
 Variables included in the survey model:
 
 These use the same recipe steps as the non-survey model (median imputation, dummy coding, normalization). Before the recipe, DHS special codes (e.g. 9996 "not weighed", 98 "don't know") were converted to `NA` in `data_script.R`, and categorical DHS codes were recoded into simple 0/1 indicators so they mean the same thing in every country.
@@ -333,7 +331,35 @@ These use the same recipe steps as the non-survey model (median imputation, dumm
   - Recoded to 0/1. Normalized.
 
 Country code (`cc`), cluster ID, and survey weights are not used as predictors. Leaving out country lets the model be applied to countries it was not trained on.
-  
+
 As noted above, the two main types of preprocessing are `step_impute_median()` and `step_impute_KNN()`. Imputing the nearest neighbor is most appropriate for our analysis, as it will ensure that the observations being imputed are close geographically. However, the trade off is that it takes an extremely long time.
 
 We are using logistic regression and LASSO regression as two algorithms to see if there are notable differences. The LASSO hyperparameter is Lambda via a tune grid to see if there are variables resulting in a heavy penalty or with no predictive power.
+
+**Interpretation**
+
+**a. What the results mean and whether the model is useful**
+
+**What we estimated.** Our first model predicts whether a child is stunted using only the 16 non-survey predictors: cluster location, elevation, urban/rural status, SPEI drought exposure in four time windows, and MapSPAM crop area within 10 km. We tuned an L1-penalized (lasso) logistic regression with stratified 10-fold cross-validation on the 127,615 training children. The best penalty was the smallest value in the grid (1e-10), and the seven smallest penalties gave virtually identical results. In practice the lasso did almost no shrinkage, and it set only spei_mean_yr2 and drought_share_yr1 to zero. With 16 predictors and more than 100,000 observations, there was little overfitting for the penalty to fix. The model's problem is a weak signal, not too much variance.
+
+**How well it predicts.** The cross-validated ROC AUC is 0.611. If we pick one stunted and one non-stunted child at random, the model gives the stunted child a higher risk score 61% of the time, compared with 50% for a coin flip.
+
+**Error rate in context.** In Question 1d we argued that false negatives (missing a stunted child) are the costlier error. To see what that means in practice, we examined out-of-fold predictions from the current median-imputation version of the model on the same ten folds. That version's AUC is 0.612, matching the saved run.
+
+**Is the model useful?** As a child-level screening tool, no. Its discrimination is poor, and no cutoff gives an acceptable trade-off: it either misses most stunted children or flags most children, which adds little over screening everyone.
+
+The case for the model is at the area level. Its inputs come from GPS coordinates and public climate and crop rasters, so it can be computed for places and years with no household survey. That matters because DHS surveys happen only every few years, and routine growth monitoring has poor-quality weight and height measurements and low coverage.
+
+**b. Next steps: feature engineering and modeling options**
+
+**Feature engineering 1: Remove overlapping climate and crop variables, and combine the drought windows.**\
+Many of our non-survey predictors measure nearly the same thing. In the training data, crop_ha_mean and rainfed_ha correlate at 0.99, and crop_ha_mean and staple_ha_mean at 0.91. Each SPEI average correlates at about −0.8 with the drought share for the same window. We would keep only crop_ha_mean and the four drought-share variables, and drop the rest. We would also add one summary variable, drought_first2yrs, built with mutate() and rowMeans(..., na.rm = TRUE) as the average drought share across the pregnancy, first-year and second-year windows.
+
+**Feature engineering 2: Turn child age into age groups.**\
+When we add the survey predictors in Models 2 and 3, child age will be one of the most important variables, but its relationship with stunting is not a straight line. A logistic regression that treats age_months as a single number can only fit risk that steadily rises or steadily falls with age, so it misses any steep climb or sharp decline. We would create an age_group variable with case_when() (0–5, 6–11, 12–23, 24–35, 36–47 and 48–59 months) and let step_dummy(), which we already use, turn it into indicator columns.
+
+**Modeling option 1: A random forest with mostly default settings.**\
+The lasso chose essentially no penalty, which tells us our linear model is too simple for the data, not too complex. A random forest builds many decision trees on random samples of the data and averages their predictions. That lets it pick up curved relationships and combinations of variables, such as drought mattering more in rural areas, without us writing them into the formula. It also needs little setup. It doesn't require standardized predictors, and the defaults (about 500 trees) usually work well, so we would tune only mtry and min_n over a small grid.
+
+**Modeling option 2: Use a lower cutoff and judge the model by how many stunted children it catches.**\
+Right now the model labels a child as stunted only when the predicted probability is above 0.5. An interesting idea is to try a few lower cutoffs, such as 0.40, 0.32 and 0.25.. We would pick the cutoff that reaches a target sensitivity, such as 80%, and report how many children it flags, so a program can judge whether it has the capacity to follow up with them.
